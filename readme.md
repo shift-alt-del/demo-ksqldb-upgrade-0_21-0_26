@@ -136,14 +136,66 @@ The scenario
     (...)
     ```
 
-6. TODO: UDAF
+7. Event/Process time, Demo re-enable GRACE period with new stream-stream joins semantics
+    
+    Case1: fail to do stream-table join
+    ```
+    SET 'auto.offset.reset' = 'earliest';
+    SET 'max.task.idle.ms' = '0';
+
+    # create dim table and event stream
+    create table dim (id integer primary key, val varchar, ts varchar) with (
+        value_format='delimited', partitions=1, kafka_topic='dim');
+    create stream event (id integer key, val varchar, ts varchar) with (
+        value_format='delimited', partitions=1, kafka_topic='event');
+
+    # data ingestion
+    insert into dim (id, val, ts) values (1, 'val2', '2022-05-09 02:00:00');
+    insert into event (id, val, ts) values (1, 'val1', '2022-05-09 01:00:00');
+    insert into event (id, val, ts) values (1, 'val3', '2022-05-09 03:00:00');
+
+    # stream should able to join table 
+    select * from event e left join dim d on e.id=d.id emit changes;
+
+
+    # HOW to fix - give a timestamp and timestamp_format in with(...)
+    create table dim (id integer primary key, val varchar, ts varchar) with (
+        timestamp = 'ts', timestamp_format='yyyy-MM-dd HH:mm:ss', value_format='delimited', partitions=1, kafka_topic='dim');
+    create stream event (id integer key, val varchar, ts varchar) with (
+        timestamp = 'ts', timestamp_format='yyyy-MM-dd HH:mm:ss', value_format='delimited', partitions=1, kafka_topic='event');
+    ```
+
+    Case2: Aggregate late coming data
+    ```
+    # create event stream
+    create stream event_demo_late (id integer key, val varchar, ts varchar) with (
+        timestamp = 'ts', timestamp_format='yyyy-MM-dd HH:mm:ss', value_format='delimited', partitions=1, kafka_topic='event_demo_late');
+    
+    # insert data
+    insert into event_demo_late (id, val, ts) values (1, 'val1', '2022-05-09 01:00:00');
+    insert into event_demo_late (id, val, ts) values (1, 'val1', '2022-05-09 01:59:00');
+    insert into event_demo_late (id, val, ts) values (1, 'val1', '2022-05-09 09:00:00');
+    insert into event_demo_late (id, val, ts) values (1, 'val1', '2022-05-09 01:59:00');
+    insert into event_demo_late (id, val, ts) values (1, 'val1', '2022-05-09 09:01:00');
+
+    # grace period 0 hour
+    select from_unixtime(WINDOWSTART), from_unixtime(WINDOWEND), id, count(*) from event_demo_late window tumbling (
+        size 1 hour, grace period 0 hour) group by id emit changes;
+
+    # grace period 12 hour
+    select from_unixtime(WINDOWSTART), from_unixtime(WINDOWEND), id, count(*) from event_demo_late window tumbling (
+        size 1 hour, grace period 12 hour) group by id emit changes;
+    ```
+
+    Refernence:
+       - https://www.confluent.io/kafka-summit-san-francisco-2019/whats-the-time-and-why/
+
+
+8. TODO: UDAF
 
     ```
     ```
 
-7. Demo re-enable GRACE period with new stream-stream joins semantics
-
-    - Will not cover this time.
 
 ## Main features:
 
